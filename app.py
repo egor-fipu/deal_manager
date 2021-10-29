@@ -1,8 +1,10 @@
 import os
+from typing import Optional, List
 
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, Body
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 
@@ -27,6 +29,23 @@ FIELDS_TO_CHECK = {
     f'UF_CRM_{DELIVERY_ADDRESS}': 'delivery_adress',
     f'UF_CRM_{DELIVERY_DATE}': 'delivery_date',
 }
+
+
+class Contact(BaseModel):
+    name: Optional[str]
+    surname: Optional[str]
+    phone: str = Field(..., min_length=11, max_length=12)
+    adress: Optional[str]
+
+
+class Deal(BaseModel):
+    title: Optional[str]
+    description: Optional[str]
+    client: Contact
+    products: List[str]
+    delivery_adress: str
+    delivery_date: str
+    delivery_code: str = Field(..., min_length=12, max_length=12)
 
 
 def add_deal_userfield(field_name, user_type_id='string'):
@@ -118,9 +137,6 @@ def search_deal(deal):
 
 
 def add_deal(deal, contact_id):
-    for field in FIELDS_TO_CHECK.values():
-        if not deal.get(field):
-            return f'Ошибка добавления задачи: отсутствует поле "{field}"'
     data = {
         'fields':
             {
@@ -157,7 +173,7 @@ def check_update_deal(old_deal, new_deal):
         if type(new_deal.get(new_field)) == list:
             new_deal[new_field] = ', '.join(new_deal[new_field])
         if (old_deal[old_field] != new_deal.get(new_field)
-                and new_deal.get(new_field) is not None):
+                and new_deal.get(new_field)):
             field_to_update['fields'][old_field] = new_deal.get(new_field)
     if field_to_update['fields']:
         result = update_deal(field_to_update)
@@ -166,16 +182,6 @@ def check_update_deal(old_deal, new_deal):
             return upd_deal[0]
         return f'Ошибка обновления задачи: {result}'
     return old_deal
-
-
-def required_field_not_in(deal):
-    if not deal.get('client'):
-        return f'Ошибка: отсутствует обязательное поле "client"'
-    elif not deal.get('client').get('phone'):
-        return f'Ошибка: отсутствует обязательное поле "phone" клиента'
-    elif not deal.get('delivery_code'):
-        return f'Ошибка: отсутствует обязательное поле "delivery_code"'
-    return False
 
 
 def add_or_update_deal(contact, old_deal, input_deal):
@@ -188,6 +194,8 @@ def add_or_update_deal(contact, old_deal, input_deal):
         new_deal = add_deal(input_deal, contact['contact']['ID'])
         return {'contact': contact['contact'], 'deal': new_deal}
     if old_deal:
+        if contact['contact']['ID'] != old_deal[0]['CONTACT_ID']:
+            return {'contact': contact['contact'], 'deal': 'Сделка с таким "delivery_code" уже есть у другого контакта'}
         upd_deal = check_update_deal(old_deal[0], input_deal)
         return {'contact': contact['contact'], 'deal': upd_deal}
     new_deal = add_deal(input_deal, contact['contact']['ID'])
@@ -201,14 +209,12 @@ except Exception as err:
 
 
 @app.post('/api/v1')
-def main(payload: dict = Body(...)):
+def main(deal: Deal = Body(...)):
     try:
-        missing_fields = required_field_not_in(payload)
-        if missing_fields:
-            return missing_fields
-        contact = get_or_create_contact(payload.get('client'))
-        old_deal = search_deal(payload)
-        result = add_or_update_deal(contact, old_deal, payload)
+        deal = deal.dict()
+        contact = get_or_create_contact(deal.get('client'))
+        old_deal = search_deal(deal)
+        result = add_or_update_deal(contact, old_deal, deal)
         return result
     except Exception as err:
         return {'Ошибка': err}
