@@ -195,7 +195,10 @@ def add_or_update_deal(contact, old_deal, input_deal):
         return {'contact': contact['contact'], 'deal': new_deal}
     if old_deal:
         if contact['contact']['ID'] != old_deal[0]['CONTACT_ID']:
-            return {'contact': contact['contact'], 'deal': 'Сделка с таким "delivery_code" уже есть у другого контакта'}
+            return {
+                'contact': contact['contact'],
+                'deal': 'Сделка с таким "delivery_code" уже есть у другого контакта'
+            }
         upd_deal = check_update_deal(old_deal[0], input_deal)
         return {'contact': contact['contact'], 'deal': upd_deal}
     new_deal = add_deal(input_deal, contact['contact']['ID'])
